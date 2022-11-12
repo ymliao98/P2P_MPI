@@ -208,7 +208,7 @@ def non_iid_partition(ratio, train_class_num, worker_num):
     return partition_sizes
 
 def partition_data(dataset_type, data_pattern, worker_num=10):
-    train_dataset, _ = datasets.load_datasets(dataset_type)
+    train_dataset, _ = datasets.load_datasets(dataset_type=dataset_type,data_path=args.data_path)
 
     if dataset_type == "CIFAR10" or dataset_type == "FashionMNIST":
         train_class_num=10

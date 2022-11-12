@@ -102,6 +102,9 @@ def main():
     train_dataset, test_dataset = datasets.load_datasets(common_config.dataset_type, common_config.data_path)
     train_loader = datasets.create_dataloaders(train_dataset, batch_size=common_config.batch_size, selected_idxs=client_config.train_data_idxes)
     test_loader = datasets.create_dataloaders(test_dataset, batch_size=16, shuffle=False)
+    local_model = models.create_model_instance(common_config.dataset_type, common_config.model_type)
+    torch.nn.utils.vector_to_parameters(common_config.para, local_model.parameters())
+    common_config.para=local_model
 
     while True:
         loop = asyncio.new_event_loop()
@@ -115,12 +118,13 @@ def main():
         loop.run_until_complete(asyncio.wait(tasks))
         loop.close()
 
-        local_para=common_config.para
+        local_model=common_config.para
         logger.info("get begin")
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         tasks = []
 
+        local_para=torch.nn.utils.parameters_to_vector(local_model.parameters()).detach()
         for i in range(len(common_config.comm_neighbors)):
             l=len(common_config.comm_neighbors)
             logger.info("nei:{}".format(common_config.comm_neighbors[i]))
@@ -131,76 +135,12 @@ def main():
                 # print("worker send")
                 task = asyncio.ensure_future(get_para(comm, common_config, common_config.comm_neighbors[i], common_config.tag))
                 tasks.append(task)
-                # print("worker get")
-            # elif rank == 10:
-            #     task1 = asyncio.ensure_future(send_para(comm, local_para, common_config.comm_neighbors[i], common_config.tag))
-            #     tasks.append(task1)
-            #     print("worker send")
-            #     task2 = asyncio.ensure_future(get_para(comm, common_config, common_config.comm_neighbors[l-1-i], common_config.tag))
-            #     tasks.append(task2)
-            #     print("worker get")
             else:
                 task = asyncio.ensure_future(get_para(comm, common_config, common_config.comm_neighbors[i], common_config.tag))
                 tasks.append(task)
                 # print("worker send")
                 task = asyncio.ensure_future(send_para(comm, local_para, common_config.comm_neighbors[i], common_config.tag))
                 tasks.append(task)
-
-
-        # full
-        # for i in range(len(common_config.comm_neighbors)):
-        #     l=len(common_config.comm_neighbors)
-        #     logger.info("nei:{}".format(common_config.comm_neighbors[i]))
-
-        #     if i+1-rank>=0:
-        #         task = asyncio.ensure_future(send_para(comm, local_para, common_config.comm_neighbors[i], common_config.tag))
-        #         tasks.append(task)
-        #         # print("worker send")
-        #         task = asyncio.ensure_future(get_para(comm, common_config, common_config.comm_neighbors[i], common_config.tag))
-        #         tasks.append(task)
-        #         # print("worker get")
-        #     # elif rank == 10:
-        #     #     task1 = asyncio.ensure_future(send_para(comm, local_para, common_config.comm_neighbors[i], common_config.tag))
-        #     #     tasks.append(task1)
-        #     #     print("worker send")
-        #     #     task2 = asyncio.ensure_future(get_para(comm, common_config, common_config.comm_neighbors[l-1-i], common_config.tag))
-        #     #     tasks.append(task2)
-        #     #     print("worker get")
-        #     else:
-        #         task = asyncio.ensure_future(get_para(comm, common_config, common_config.comm_neighbors[i], common_config.tag))
-        #         tasks.append(task)
-        #         # print("worker send")
-        #         task = asyncio.ensure_future(send_para(comm, local_para, common_config.comm_neighbors[i], common_config.tag))
-        #         tasks.append(task)
-        #         # print("worker get")
-
-        # ring
-
-        # for i in range(len(common_config.comm_neighbors)):
-        #     l=len(common_config.comm_neighbors)
-        #     logger.info("nei:{}".format(common_config.comm_neighbors[i]))
-        #     if rank == 1 or rank ==10:
-        #         task = asyncio.ensure_future(send_para(comm, local_para, common_config.comm_neighbors[i], common_config.tag))
-        #         tasks.append(task)
-        #         # print("worker send")
-        #         task = asyncio.ensure_future(get_para(comm, common_config, common_config.comm_neighbors[l-1-i], common_config.tag))
-        #         tasks.append(task)
-        #         # print("worker get")
-        #     # elif rank == 10:
-        #     #     task1 = asyncio.ensure_future(send_para(comm, local_para, common_config.comm_neighbors[i], common_config.tag))
-        #     #     tasks.append(task1)
-        #     #     print("worker send")
-        #     #     task2 = asyncio.ensure_future(get_para(comm, common_config, common_config.comm_neighbors[l-1-i], common_config.tag))
-        #     #     tasks.append(task2)
-        #     #     print("worker get")
-        #     else:
-        #         task = asyncio.ensure_future(get_para(comm, common_config, common_config.comm_neighbors[i], common_config.tag))
-        #         tasks.append(task)
-        #         # print("worker send")
-        #         task = asyncio.ensure_future(send_para(comm, local_para, common_config.comm_neighbors[l-1-i], common_config.tag))
-        #         tasks.append(task)
-        #         # print("worker get")
-        # print(len(tasks))
         logger.info(len(tasks))
 
         loop.run_until_complete(asyncio.wait(tasks))
@@ -208,7 +148,8 @@ def main():
         logger.info("get end")
 
         local_para = aggregate_model(local_para, common_config)
-        common_config.para=local_para
+        torch.nn.utils.vector_to_parameters(local_para, local_model.parameters())
+        common_config.para=local_model
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -227,9 +168,9 @@ def main():
 
 async def local_training(comm, common_config, train_loader):
     comm_neighbors = await get_data(comm, MASTER_RANK, common_config.tag)
-
-    local_model = models.create_model_instance(common_config.dataset_type, common_config.model_type)
-    torch.nn.utils.vector_to_parameters(common_config.para, local_model.parameters())
+    # local_model = models.create_model_instance(common_config.dataset_type, common_config.model_type)
+    # torch.nn.utils.vector_to_parameters(common_config.para, local_model.parameters())
+    local_model = common_config.para
     local_model.to(device)
     epoch_lr = common_config.lr
     
@@ -243,15 +184,16 @@ async def local_training(comm, common_config, train_loader):
     else:
         optimizer = optim.SGD(local_model.parameters(),momentum=common_config.momentum, lr=epoch_lr, weight_decay=common_config.weight_decay)
     train_loss = train(local_model, train_loader, optimizer, local_iters=local_steps, device=device, model_type=common_config.model_type)
-    local_paras = torch.nn.utils.parameters_to_vector(local_model.parameters()).detach()
+    # local_paras = torch.nn.utils.parameters_to_vector(local_model.parameters()).detach()
 
     common_config.comm_neighbors = comm_neighbors
-    common_config.para = local_paras
+    common_config.para = local_model
     common_config.train_loss = train_loss
 
 async def local_training2(comm, common_config, test_loader):
-    local_model = models.create_model_instance(common_config.dataset_type, common_config.model_type)
-    torch.nn.utils.vector_to_parameters(common_config.para, local_model.parameters())
+    # local_model = models.create_model_instance(common_config.dataset_type, common_config.model_type)
+    # torch.nn.utils.vector_to_parameters(common_config.para, local_model.parameters())
+    local_model = common_config.para
     local_model.to(device)
     # torch.nn.utils.vector_to_parameters(local_para, local_model.parameters())
     test_loss, acc = test(local_model, test_loader, device, model_type=common_config.model_type)
@@ -292,7 +234,6 @@ def aggregate_model(local_para, common_config):
             para_delta += weight * model_delta
 
         local_para += para_delta
-
     return local_para
 
 if __name__ == '__main__':
