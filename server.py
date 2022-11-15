@@ -194,6 +194,7 @@ def update_T(worker_num):
 
 def update_W(topology, worker_list):
     for worker in worker_list:
+        worker.config.comm_neighbors=list()
         for i in range(len(worker_list)):
             if topology[worker.rank-1][i]==1:
                 worker.config.comm_neighbors.append(i+1)
